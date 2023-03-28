@@ -30,18 +30,23 @@ startButton.addEventListener('click', async () => {
         });
     };
 
-    // Create an offer and set the local description
-    const offer = await peerConnection.createOffer();
-    await peerConnection.setLocalDescription(offer);
-
-    // Send the offer to the server
-    const response = await fetch('/offer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(offer),
+    // Fetch the offer from the server
+    const response = await fetch('/watch', {
+        method: 'GET',
     });
 
-    // Receive the answer from the server and set the remote description
-    const answer = await response.json();
-    await peerConnection.setRemoteDescription(answer);
+    // Receive the offer from the server and set the remote description
+    const offer = await response.json();
+    await peerConnection.setRemoteDescription(offer);
+
+    // Create an answer and set the local description
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+
+    // Send the answer to the server
+    await fetch('/offer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(answer),
+    });
 });

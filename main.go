@@ -3,10 +3,8 @@ package main
 import (
 	"encoding/json"
 	"log"
-	"net/http"
   "sync"
   "os"
-  "time"
 	"github.com/pion/webrtc/v3"
 	"github.com/gofiber/fiber/v2"
 )
@@ -30,110 +28,85 @@ func getPort() string {
 func main() {
 	app := fiber.New()
 
-	app.Get("/", func(c *fiber.Ctx) error {
-		return c.JSON(fiber.Map{
-			"message": "Hello, world!",
-		})
-	})
 
-  app.Static("/watch","./public", fiber.Static{
-    Compress:      true,
-    ByteRange:     true,
-    Browse:        true,
-    Index:         "watch.html",
-    CacheDuration: 10 * time.Second,
-    MaxAge:        3600,
-  })
+	app.Post("/offer", handleOffer)
+	app.Post("/candidate", handleCandidate)
+	app.Get("/watch", handleWatch)
 
-  app.Static("/share","./public", fiber.Static{
-    Compress:      true,
-    ByteRange:     true,
-    Browse:        true,
-    Index:         "share.html",
-    CacheDuration: 10 * time.Second,
-    MaxAge:        3600,
-  })
-	app.Listen(getPort())
+	app.Static("/", "./public/")
+
+	log.Fatal(app.Listen(getPort()))
 }
 
-func handleOffer(w http.ResponseWriter, r *http.Request) {
+func handleOffer(c *fiber.Ctx) error {
 	pcLock.Lock()
 	defer pcLock.Unlock()
+
 	// Decode the received offer
 	var offer webrtc.SessionDescription
-	err := json.NewDecoder(r.Body).Decode(&offer)
+	err := json.Unmarshal(c.Body(), &offer)
 	if err != nil {
-		http.Error(w, "Failed to decode offer", http.StatusBadRequest)
-		return
-
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Failed to decode offer"})
 	}
 
 	// Create a new RTCPeerConnection
 	peerConnection, err := webrtc.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
-		http.Error(w, "Failed to create peer connection", http.StatusInternalServerError)
-		return
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create peer connection"})
 	}
-
-	// Set the handler for ICE candidate event
-	peerConnection.OnICECandidate(func(candidate *webrtc.ICECandidate) {
-		if candidate != nil {
-			// Send the ICE candidate to the client
-			data, err := json.Marshal(candidate.ToJSON())
-			if err != nil {
-				log.Println("Failed to marshal ICE candidate:", err)
-				return
-			}
-			w.Write(data)
-		}
-	})
 
 	// Set the remote description
 	err = peerConnection.SetRemoteDescription(offer)
 	if err != nil {
-		http.Error(w, "Failed to set remote description", http.StatusInternalServerError)
-		return
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to set remote description"})
 	}
 
-	// Create an answer
+	// Create an answer and set the local description
 	answer, err := peerConnection.CreateAnswer(nil)
 	if err != nil {
-		http.Error(w, "Failed to create answer", http.StatusInternalServerError)
-		return
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create answer"})
 	}
 
-	// Set the local description
 	err = peerConnection.SetLocalDescription(answer)
 	if err != nil {
-		http.Error(w, "Failed to set local description", http.StatusInternalServerError)
-		return
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to set local description"})
 	}
 
-	// Send the answer to the client
-	data, err := json.Marshal(answer)
-	if err != nil {
-		http.Error(w, "Failed to marshal answer", http.StatusInternalServerError)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	// Return the answer to the sharing client
+	return c.JSON(answer)
 }
 
-func handleCandidate(w http.ResponseWriter, r *http.Request) {
+func handleCandidate(c *fiber.Ctx) error {
 	pcLock.Lock()
 	defer pcLock.Unlock()
+
 	// Decode the received ICE candidate
-	var candidate webrtc.ICECandidateInit
-	err := json.NewDecoder(r.Body).Decode(&candidate)
+	var iceCandidate webrtc.ICECandidateInit
+	err := json.Unmarshal(c.Body(), &iceCandidate)
 	if err != nil {
-		http.Error(w, "Failed to decode ICE candidate", http.StatusBadRequest)
-		return
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Failed to decode ICE candidate"})
 	}
 
 	// Add the ICE candidate to the peer connection
-	err = peerConnection.AddICECandidate(candidate)
+	err = peerConnection.AddICECandidate(iceCandidate)
 	if err != nil {
-		http.Error(w, "Failed to add ICE candidate", http.StatusInternalServerError)
-		return
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to add ICE candidate"})
 	}
+
+	return c.SendStatus(fiber.StatusOK)
 }
+
+func handleWatch(c *fiber.Ctx) error {
+	pcLock.Lock()
+	defer pcLock.Unlock()
+
+	offer, err := peerConnection.CreateOffer(nil)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create offer"})
+	}
+
+	return c.JSON(offer)
+}
+
+
+
