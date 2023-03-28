@@ -30,16 +30,29 @@ func getPort() string {
 func main() {
 	app := fiber.New()
 
+	app.Get("/", func(c *fiber.Ctx) error {
+		return c.JSON(fiber.Map{
+			"message": "Hello, world!",
+		})
+	})
 
-app.Static("/","./public", fiber.Static{
-  Compress:      true,
-  ByteRange:     true,
-  Browse:        true,
-  Index:         "index.html",
-  CacheDuration: 10 * time.Second,
-  MaxAge:        3600,
-})
+  app.Static("/watch","./public", fiber.Static{
+    Compress:      true,
+    ByteRange:     true,
+    Browse:        true,
+    Index:         "watch.html",
+    CacheDuration: 10 * time.Second,
+    MaxAge:        3600,
+  })
 
+  app.Static("/share","./public", fiber.Static{
+    Compress:      true,
+    ByteRange:     true,
+    Browse:        true,
+    Index:         "share.html",
+    CacheDuration: 10 * time.Second,
+    MaxAge:        3600,
+  })
 	app.Listen(getPort())
 }
 
